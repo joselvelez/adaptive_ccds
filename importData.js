@@ -6,23 +6,24 @@ function importData(context) {
     var endDateString = dataSource.getSetting("Period Range").getValue().getToPeriodEndDateTime().substring(0, 10);
     var method = 'GET';
     var body = '';
-    var headers = { };
+    var headers = {"Accept": "application/json"}; // We need this in the header, otherwise the Quickboks API will send back text that cannot be parsed by JSON
 
     var tableId = context.getRowset(['id']).getTableId();
     var accountList = [];
     
     // Get the Account List from Quickbooks
-    var accountListRequestURL = `${apiEndpoint}/v3/company/${realmID}/reports/AccountList?minorversion=62`;
+    var accountListRequestURL = `${apiEndpoint}/v3/company/${realmID}/query?query=select * from Account&minorversion=62/`;
     var accountListResponse = ai.https.authorizedRequest(accountListRequestURL, method, body, headers);
     
     if (accountListResponse.getHttpCode() === 200) {
         responseBody = accountListResponse.getBody();
-        var accountsData = JSON.parse(responseBody).Rows.Row;
+        var accountsData = JSON.parse(responseBody).QueryResponse.Account;
 
         for (i = 0; i < accountsData.length; i++) {
             accountList.push({
-                id: accountsData[i].ColData[0].value,
-                name: accountsData[i].ColData[1].value
+                id: accountsData[i].Id,
+                AcctNum: accountsData[i].AcctNum,
+                Name: accountsData[i].Name
             });
         }
         ai.log.logInfo('List of Accounts', JSON.stringify(accountList));
@@ -51,7 +52,6 @@ function importData(context) {
             
             try {
                 // ai.log.logInfo("Trying to get data from source...", `Connecting to ${apiEndpoint}`);
-                ai.log.logInfo("url", importDataRequestURL);
                 // ai.log.logInfo("import data response", importDataResponse.getHttpCode());
                 importDataResponse;
             }
@@ -63,9 +63,9 @@ function importData(context) {
             if (importDataResponse.getHttpCode() == '200') {
                 // ai.log.logVerbose('Connection successful. Retrieving data...');
                 var importDataResponseBody = importDataResponse.getBody();
-                ai.log.logInfo("import data response", importDataResponseBody);
                 // Locate the embedded object within the JSON response containing the rows of data
                 var data = JSON.parse(importDataResponseBody).Rows.Row[0].Rows.Row;
+                ai.log.logInfo("import data response", data[0].ColData[0].value);
                 
                 ai.log.logInfo('Getting row count...', `${data.length} rows`);
                 
