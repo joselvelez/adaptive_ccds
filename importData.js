@@ -17,19 +17,20 @@ function importData(context) {
         var accountsData = JSON.parse(responseBody).QueryResponse.Account;
 
         ai.log.logInfo("Accounts Data", JSON.stringify(accountsData));
-        ai.log.logInfo(accountsData.length);
+        ai.log.logInfo("Accounts Data length", accountsData.length);
 
         var tableId = context.getRowset(['id']).getTableId();
         var rowset = ["id", "tx_date", "amount", "balance", "tx_type", "doc_num", "name", "memo", "split_acc"];
         var dataRowset = context.getRowset(rowset);
         
         // Import the data
-        for (i = 0; i < 5; i++) {
+        // for (i = 0; i < accountsData.length; i++) {
+        for (i = 0; i < 8; i++) {
             var internalActId = accountsData[i].Id;
             var importDataMethod = 'GET';
             var importDataBody = '';
             var importDataHeaders = {};
-            var importDataRequestURL = `${apiEndpoint}/v3/company/${realmID}/reports/GeneralLedger?start_date=${startDateString}&end_date=${endDateString}&accounting_method=Accrual&account=${parseInt(internalActId)}&minorversion=3`;
+            var importDataRequestURL = `${apiEndpoint}/v3/company/${realmID}/reports/GeneralLedger?start_date=${startDateString}&end_date=${endDateString}&accounting_method=Accrual&account=${parseInt(internalActId)}`;
             var importDataResponse = ai.https.authorizedRequest(importDataRequestURL, importDataMethod, importDataBody, importDataHeaders);
             // ai.log.logInfo("Request URL", importDataRequestURL);
     
@@ -47,31 +48,34 @@ function importData(context) {
                 if (importDataResponse.getHttpCode() == '200') {
                     // ai.log.logVerbose('Connection successful. Retrieving data...');
                     var importDataResponseBody = importDataResponse.getBody();
-                    ai.log.logInfo("Response Body", importDataResponseBody);
+                    // ai.log.logInfo("Response Body", importDataResponseBody);
+                    var dataHeaderActId = JSON.parse(importDataResponseBody).Rows.Row[0].Header.ColData[0].id;  // Get internal QB account id
                     
                     // Locate the embedded object within the JSON response containing the rows of data
-                    var data = JSON.parse(importDataResponseBody).Rows.Row[0].Rows.Row;
-                    var dataHeaderActId = JSON.parse(importDataResponseBody).Rows.Row[0].Header.ColData[0].id;
-                    // ai.log.logInfo("Import Data String Response", JSON.stringify(data));
+                    var data = JSON.parse(importDataResponseBody);
                     ai.log.logInfo('Acct ID: ', JSON.stringify(dataHeaderActId));
+                    // ai.log.logInfo('Getting row count...', `${data.length} rows`);
                     
-                    ai.log.logInfo('Getting row count...', `${data.length} rows`);
-                    
-                    for (j = 0; j < data.length; j++) {
-                        dataRowset.addRow(
-                            [
-                                dataHeaderActId,                    // Internal QB Account ID
-                                new Date(data[j].ColData[0].value), // Txn Date
-                                Number(data[j].ColData[6].value),   // Txn Amount
-                                Number(data[j].ColData[7].value),   // Account Balance
-                                data[j].ColData[1].value,           // Txn Type
-                                data[j].ColData[2].value,           // Txn doc_num
-                                data[j].ColData[3].value,           // Name
-                                data[j].ColData[4].value,           // Txn Memo
-                                data[j].ColData[5].value            // Txn Split
-                            ]
-                        );
+                    var dataLocation;
+                    var dataLength;
+
+                    switch(true) {
+                        case Object.keys(data.Rows).length === 0:
+                            ai.log.logInfo("No data in this row"); break;
+                        case data.Rows.Row[0].Rows.Row[0].hasOwnProperty('ColData'):
+                            dataLocation = data.Rows.Row[0].Rows.Row;
+                            dataLength = data.Rows.Row[0].Rows.Row.length;
+                            ai.log.logInfo("normal leaf");
+                            importData(dataLength, dataLocation); break;
+                        case data.Rows.Row[0].Rows.Row[0].Rows.Row[0].hasOwnProperty('ColData'):
+                            dataLocation = data.Rows.Row[0].Rows.Row[0].Rows.Row;
+                            dataLength = data.Rows.Row[0].Rows.Row[0].Rows.Row.length;
+                            ai.log.logInfo("nested leaf");
+                            importData(dataLength, dataLocation); break;
+                        default:
+                            ai.log.logInfo("nothing found to swtich");
                     }
+                    
                 } else {
                     ai.log.logError('Error retrieving account data from source.');
                     throw "Error";
@@ -84,5 +88,23 @@ function importData(context) {
     } else {
         ai.log.logError('Error retreiving list of accounts from source');
         throw "Error";
+    }
+    
+    function importData(dataLength, dataLocation) {
+        for (j = 0; j < dataLength; j++) {
+            dataRowset.addRow(
+                [
+                    dataHeaderActId,                                // Internal QB Account ID
+                    new Date(dataLocation[j].ColData[0].value),     // Txn Date
+                    Number(dataLocation[j].ColData[6].value),       // Txn Amount
+                    Number(dataLocation[j].ColData[7].value),       // Account Balance
+                    dataLocation[j].ColData[1].value,               // Txn Type
+                    dataLocation[j].ColData[2].value,               // Txn doc_num
+                    dataLocation[j].ColData[3].value,               // Name
+                    dataLocation[j].ColData[4].value,               // Txn Memo
+                    dataLocation[j].ColData[5].value,               // Txn Split
+                ]
+            );
+        }    
     }
 }
